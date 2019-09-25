@@ -15,9 +15,12 @@ module.exports = app => {
   // logging error
   const config = app.config.onerror;
   const viewTemplate = fs.readFileSync(config.templatePath, 'utf8');
-
+  // 全局监听异常error事件,
+  // egg源码中一些重要位置，如生命周期https://github.com/FunnyLiu/egg-core/blob/readsource/lib/egg.js#L111
+  // 会触发该error事件
   app.on('error', (err, ctx) => {
     ctx = ctx || app.createAnonymousContext();
+    // 获取自定义配置的过滤器appErrorFilter
     if (config.appErrorFilter && !config.appErrorFilter(err, ctx)) return;
 
     const status = detectStatus(err);
@@ -60,6 +63,7 @@ module.exports = app => {
       if (isProd(app)) {
         // 5xx
         if (status >= 500) {
+          // 读取配置，异常重定向
           if (errorPageUrl) {
             const statusQuery =
               (errorPageUrl.indexOf('?') > 0 ? '&' : '?') +
@@ -75,17 +79,18 @@ module.exports = app => {
         this.body = `<h2>${status} ${http.STATUS_CODES[status]}</h2>`;
         return;
       }
+      // 测试环境简单错误
       // show simple error format for unittest
       if (app.config.env === 'unittest') {
         this.status = status;
         this.body = `${err.name}: ${err.message}\n${err.stack}`;
         return;
       }
-
+      // 针对html，展示errorView，将配置的自定义模板传入
       const errorView = new ErrorView(this, err, viewTemplate);
       this.body = errorView.toHTML();
     },
-
+    // json类型
     json(err) {
       const status = detectStatus(err);
       let errorJson = {};
@@ -141,10 +146,12 @@ module.exports = app => {
       }
     },
   };
-
+  // 针对不同的类型，定义不同的配置
   // support customize error response
   [ 'all', 'html', 'json', 'text', 'js' ].forEach(type => {
     if (config[type]) errorOptions[type] = config[type];
   });
+  // 基于koa-onerror模块，源码：https://github.com/FunnyLiu/onerror/tree/readsource
+  // hack了ctx.onerror方法的方式来处理异常。这样就可以处理 steams和and event的errors，并且提供了更加灵活的配置参数。
   onerror(app, errorOptions);
 };
